@@ -6,6 +6,9 @@ import menuRoutes from './routes/menuRoutes.js';
 import orderRoutes from './routes/orderRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import errorMiddleware from './middlewares/errorMiddleware.js';
+import categoryRoutes from './routes/categoryRoutes.js';
+import dashboardRoutes from './routes/dashboardRoutes.js';
+import menuItemRoutes from './routes/menuItemRoutes.js';
 
 const app = express();
 
@@ -21,6 +24,9 @@ app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/admin/dashboard', dashboardRoutes);
+app.use('/api/menu-items', menuItemRoutes);
 
 // Error handling
 app.use(errorMiddleware);

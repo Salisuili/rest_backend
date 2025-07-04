@@ -18,14 +18,16 @@ export const register = async (req, res) => {
                     email,
                     password_hash: passwordHash,
                     full_name,
-                    phone_number
+                    phone_number,
+                    // 'role' column will automatically default to 'user' as per your SQL setup
+                    // You don't need to explicitly set it here unless you want to allow registration
+                    // with a specific role, which is typically not done for public registration.
                 }
             ])
-            .single(); 
+            .select('id, email, full_name, role') // <--- IMPORTANT: Select the 'role' column here too!
+            .single();
 
-        
         if (error) {
-            
             if (error.code === '23505' && error.details.includes('email')) {
                 // Using 409 Conflict for duplicate resource
                 return res.status(409).json({ error: 'Email already registered. Please use a different email.' });
@@ -35,30 +37,32 @@ export const register = async (req, res) => {
         }
 
         if (!user) {
-            
             throw new Error('User registration failed, no user data returned after insert.');
         }
 
-
         // --- Check JWT_SECRET availability ---
         if (!process.env.JWT_SECRET) {
-            
             throw new Error('Server configuration error: JWT secret is missing.');
         }
-        
 
+        // Generate token including the user's role
         const token = jwt.sign(
-            { id: user.id, email: user.email },
+            { id: user.id, email: user.email, role: user.role }, // <--- ADD ROLE TO JWT PAYLOAD
             process.env.JWT_SECRET,
             { expiresIn: '7d' }
         );
-        
 
-        res.status(201).json({ token, user: { id: user.id, email: user.email, full_name: user.full_name } });
-        
+        res.status(201).json({
+            token,
+            user: {
+                id: user.id,
+                email: user.email,
+                full_name: user.full_name,
+                role: user.role // <--- ADD ROLE TO RESPONSE
+            }
+        });
 
     } catch (error) {
-        // Only send a response if headers haven't been sent already by a previous return
         if (!res.headersSent) {
             res.status(400).json({ error: error.message || 'An unknown error occurred during registration.' });
         }
@@ -69,38 +73,64 @@ export const login = async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        
         const { data: user, error } = await supabase
             .from('users')
-            .select('*')
+            // Select the role and password_hash
+            .select('id, email, full_name, role, password_hash') // <--- IMPORTANT: Select 'role' and 'password_hash'
             .eq('email', email)
             .single();
 
-        // --- Step 3: Check for user existence or database query error ---
+        // --- Check for user existence or database query error ---
         if (error) {
+            console.error('Login Supabase error:', error.message); // Log the actual error for debugging
             throw new Error('Database query failed during login. Please try again later.');
         }
         if (!user) {
             throw new Error('Invalid credentials'); // User not found, treat as invalid credentials
         }
+
+        // Compare provided password with hashed password from DB
         const isMatch = await bcrypt.compare(password, user.password_hash);
 
         if (!isMatch) {
             throw new Error('Invalid credentials'); // Passwords do not match
         }
+
         if (!process.env.JWT_SECRET) {
             throw new Error('Server configuration error: JWT secret is missing.');
         }
+
+        // Generate token including the user's role
         const token = jwt.sign(
-            { id: user.id, email: user.email },
+            { id: user.id, email: user.email, role: user.role }, // <--- ADD ROLE TO JWT PAYLOAD
             process.env.JWT_SECRET,
             { expiresIn: '7d' }
         );
-        res.json({ token, user: { id: user.id, email: user.email, full_name: user.full_name } });
-        
+
+        res.json({
+            token,
+            user: {
+                id: user.id,
+                email: user.email,
+                full_name: user.full_name,
+                role: user.role // <--- ADD ROLE TO RESPONSE
+            }
+        });
+
     } catch (error) {
+        console.error('Login general error:', error.message); // Log the actual error for debugging
         if (!res.headersSent) {
+            // For security, always return generic 'Invalid credentials' for login failures
             res.status(401).json({ error: 'Invalid credentials' });
         }
+    }
+};
+
+export const getProfile = (req, res) => {
+    if (req.user) {
+        const { password_hash, ...userWithoutHash } = req.user; // Destructure to remove password_hash
+        return res.status(200).json(userWithoutHash);
+    } else {
+        return res.status(401).json({ error: 'User not authenticated after middleware processing.' });
     }
 };
