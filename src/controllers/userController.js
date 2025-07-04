@@ -70,15 +70,12 @@ export const updateUserProfile = async (req, res) => {
 
 export const getAllUsers = async (req, res) => {
     try {
-        // Authorization check is handled by adminMiddleware in userRoutes,
-        // but adding a check here too provides an extra layer of safety.
         if (req.user.role !== 'admin') {
             return res.status(403).json({ error: 'Access denied. Only administrators can view all users.' });
         }
 
         const { data: users, error } = await supabase
             .from('users')
-            // Fetch necessary fields for admin view. Use 'role' instead of 'is_admin'.
             .select('id, full_name, email, phone_number, role, created_at, updated_at')
             .order('created_at', { ascending: false });
 
@@ -93,12 +90,10 @@ export const getAllUsers = async (req, res) => {
     }
 };
 
-// New: Get a single user by ID (for admin to view any user's details)
 export const getSingleUserById = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // Admin authorization check
         if (req.user.role !== 'admin') {
             return res.status(403).json({ error: 'Access denied. Only administrators can view other user profiles directly.' });
         }
@@ -134,18 +129,14 @@ export const deleteUser = async (req, res) => {
         const currentUserId = req.user.id;
         const currentUserRole = req.user.role;
 
-        // Ensure only admins can delete users
         if (currentUserRole !== 'admin') {
             return res.status(403).json({ error: 'Access denied. Only administrators can delete users.' });
         }
 
-        // Prevent admin from deleting themselves
         if (currentUserId === id) {
             return res.status(400).json({ error: 'You cannot delete your own account through this interface.' });
         }
 
-        // Optional: Prevent deleting the last admin or other critical accounts
-        // You might fetch all admins first to ensure there's at least one left.
         const { data: targetUser, error: targetUserError } = await supabase
             .from('users')
             .select('role')
@@ -156,7 +147,6 @@ export const deleteUser = async (req, res) => {
             return res.status(404).json({ error: 'User to delete not found.' });
         }
         if (targetUser.role === 'admin') {
-             // Fetch count of other admins to prevent deleting the last one
              const { count: adminCount, error: countError } = await supabase
                 .from('users')
                 .select('id', { count: 'exact', head: true })
@@ -177,7 +167,6 @@ export const deleteUser = async (req, res) => {
 
         if (error) {
             console.error('Supabase error deleting user:', error.message);
-            // Handle specific errors, e.g., foreign key constraints
             if (error.code === '23503') { // Foreign key violation
                 return res.status(400).json({ error: 'Cannot delete user: Associated data (e.g., orders, addresses) exists. Consider deactivating or anonymizing the user instead.' });
             }
@@ -198,23 +187,19 @@ export const updateUserRole = async (req, res) => {
         const currentUserId = req.user.id;
         const currentUserRole = req.user.role;
 
-        // Authorization: Only admin can update roles
         if (currentUserRole !== 'admin') {
             return res.status(403).json({ error: 'Access denied. Only administrators can update user roles.' });
         }
 
-        // Validation: Check if the provided role is valid
-        const validRoles = ['admin', 'customer', 'driver', 'staff']; // Define your valid roles
+        const validRoles = ['admin', 'user']; // Define your valid roles
         if (!role || !validRoles.includes(role)) {
             return res.status(400).json({ error: `Invalid role provided. Valid roles are: ${validRoles.join(', ')}.` });
         }
 
-        // Prevent an admin from changing their own role (or degrading other super-admins)
         if (id === currentUserId && role !== 'admin') {
             return res.status(400).json({ error: 'You cannot demote your own admin account.' });
         }
 
-        // Prevent demoting the last admin if there's only one
         if (targetUser && targetUser.role === 'admin' && role !== 'admin') {
              const { count: adminCount, error: countError } = await supabase
                 .from('users')
@@ -252,9 +237,6 @@ export const updateUserRole = async (req, res) => {
 };
 
 
-// --- User Address Management Functions ---
-// These are good as is, just ensuring consistent error handling and logs.
-
 export const getUserAddresses = async (req, res) => {
     try {
         const userId = req.user.id;
@@ -288,7 +270,6 @@ export const addUserAddress = async (req, res) => {
         }
 
         if (is_default) {
-            // Unset current default address for this user
             await supabase
                 .from('user_addresses')
                 .update({ is_default: false, updated_at: new Date().toISOString() })
@@ -314,7 +295,6 @@ export const addUserAddress = async (req, res) => {
 
         if (error) {
             console.error('Supabase error adding user address:', error.message);
-            // Handle specific errors like unique constraints if you have them
             return res.status(500).json({ error: 'Database error adding user address.' });
         }
 
@@ -326,7 +306,6 @@ export const addUserAddress = async (req, res) => {
     }
 };
 
-// You might also want updateAddress and deleteAddress functions
 export const updateAddress = async (req, res) => {
     try {
         const userId = req.user.id;
