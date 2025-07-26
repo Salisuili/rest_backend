@@ -1,54 +1,66 @@
 // backend/src/controllers/userController.js
 import supabase from '../config/supabase.js';
 
-// --- User Profile Management (for logged-in user) ---
+// --- User Profile Management (for logged-in user to manage their OWN profile) ---
 
+/**
+ * Get the profile of the currently authenticated user.
+ * @route GET /api/users/profile
+ * @access Private (Authenticated User)
+ */
 export const getUserProfile = async (req, res) => {
     try {
-        // req.user is populated by authMiddleware
-        const { id } = req.user;
+        // req.user is populated by authMiddleware, containing the user's ID
+        const { id: userId } = req.user;
 
         const { data: user, error } = await supabase
             .from('users')
-            // Select specific fields for security and privacy
-            .select('id, full_name, email, phone_number, created_at, role') // Include role for front-end
-            .eq('id', id)
+            // Select specific fields for security and privacy, including 'role'
+            .select('id, full_name, email, phone_number, created_at, updated_at, role')
+            .eq('id', userId)
             .single();
 
         if (error || !user) {
-            // Use 404 for not found, 500 for other database errors
-            if (error?.code === 'PGRST116') { // Supabase code for no rows found
+            // Handle specific Supabase error for no rows found (e.g., user deleted)
+            if (error?.code === 'PGRST116') {
                 return res.status(404).json({ error: 'User profile not found.' });
             }
             console.error('Supabase error fetching user profile:', error?.message);
             return res.status(500).json({ error: 'Database error fetching user profile.' });
         }
 
-        res.json(user);
+        res.status(200).json(user);
     } catch (error) {
         console.error('Error in getUserProfile:', error.message);
         res.status(500).json({ error: error.message || 'Internal server error fetching profile.' });
     }
 };
 
+/**
+ * Update the profile of the currently authenticated user.
+ * @route PUT /api/users/profile
+ * @access Private (Authenticated User)
+ */
 export const updateUserProfile = async (req, res) => {
     try {
-        const { id } = req.user; // User ID from authenticated session
+        const { id: userId } = req.user; // User ID from authenticated session
         const { full_name, phone_number } = req.body; // Fields allowed for update
 
         const updates = { updated_at: new Date().toISOString() }; // Always update timestamp
         if (full_name !== undefined) updates.full_name = full_name;
         if (phone_number !== undefined) updates.phone_number = phone_number;
 
-        if (Object.keys(updates).length === 1 && updates.updated_at) { // Only updated_at was set
+        // If no actual fields were provided for update (only timestamp was set)
+        if (Object.keys(updates).length === 1 && updates.updated_at) {
             return res.status(400).json({ error: 'No user fields to update. Provide full_name or phone_number.' });
         }
 
         const { data: updatedUser, error } = await supabase
             .from('users')
             .update(updates)
-            .eq('id', id)
-            .select('id, full_name, email, phone_number, created_at, role') // Return updated fields including role
+            .eq('id', userId)
+            // Return updated fields including role for consistency
+            .select('id, full_name, email, phone_number, created_at, updated_at, role')
             .single();
 
         if (error) {
@@ -66,18 +78,25 @@ export const updateUserProfile = async (req, res) => {
     }
 };
 
-// --- Admin User Management ---
+// --- Admin User Management (for administrators to manage ALL users) ---
 
+/**
+ * Get all users in the system.
+ * @route GET /api/users
+ * @access Private (Admin Only)
+ */
 export const getAllUsers = async (req, res) => {
     try {
+        // Authorization check: Ensure only admins can access this route
         if (req.user.role !== 'admin') {
             return res.status(403).json({ error: 'Access denied. Only administrators can view all users.' });
         }
 
         const { data: users, error } = await supabase
             .from('users')
+            // Fetch necessary fields for admin view, using 'role' column
             .select('id, full_name, email, phone_number, role, created_at, updated_at')
-            .order('created_at', { ascending: false });
+            .order('created_at', { ascending: false }); // Order by creation date descending
 
         if (error) {
             console.error('Supabase error fetching all users (admin):', error.message);
@@ -90,10 +109,16 @@ export const getAllUsers = async (req, res) => {
     }
 };
 
+/**
+ * Get a single user by ID (for admin to view any user's details).
+ * @route GET /api/users/:id
+ * @access Private (Admin Only)
+ */
 export const getSingleUserById = async (req, res) => {
     try {
-        const { id } = req.params;
+        const { id: targetUserId } = req.params; // ID of the user to fetch
 
+        // Authorization check: Ensure only admins can view other user profiles directly
         if (req.user.role !== 'admin') {
             return res.status(403).json({ error: 'Access denied. Only administrators can view other user profiles directly.' });
         }
@@ -101,12 +126,12 @@ export const getSingleUserById = async (req, res) => {
         const { data: user, error } = await supabase
             .from('users')
             .select('id, full_name, email, phone_number, role, created_at, updated_at')
-            .eq('id', id)
+            .eq('id', targetUserId)
             .single();
 
         if (error) {
             console.error('Supabase error fetching single user by ID (admin):', error.message);
-            if (error.code === 'PGRST116') {
+            if (error.code === 'PGRST116') { // Supabase code for no rows found
                 return res.status(404).json({ error: 'User not found.' });
             }
             return res.status(500).json({ error: 'Database error fetching user.' });
@@ -122,102 +147,130 @@ export const getSingleUserById = async (req, res) => {
     }
 };
 
-
+/**
+ * Delete a user by ID.
+ * @route DELETE /api/users/:id
+ * @access Private (Admin Only)
+ */
 export const deleteUser = async (req, res) => {
     try {
-        const { id } = req.params; // User ID to delete from URL parameter
+        const { id: targetUserId } = req.params; // User ID to delete from URL parameter
         const currentUserId = req.user.id;
         const currentUserRole = req.user.role;
 
+        // Authorization check: Ensure only admins can delete users
         if (currentUserRole !== 'admin') {
             return res.status(403).json({ error: 'Access denied. Only administrators can delete users.' });
         }
 
-        if (currentUserId === id) {
+        // Safeguard: Prevent admin from deleting their own account
+        if (currentUserId === targetUserId) {
             return res.status(400).json({ error: 'You cannot delete your own account through this interface.' });
         }
 
+        // Fetch target user's role to apply specific safeguards
         const { data: targetUser, error: targetUserError } = await supabase
             .from('users')
             .select('role')
-            .eq('id', id)
+            .eq('id', targetUserId)
             .single();
 
         if (targetUserError || !targetUser) {
             return res.status(404).json({ error: 'User to delete not found.' });
         }
+
+        // Safeguard: Prevent deleting the last administrator account
         if (targetUser.role === 'admin') {
-             const { count: adminCount, error: countError } = await supabase
+            const { count: adminCount, error: countError } = await supabase
                 .from('users')
-                .select('id', { count: 'exact', head: true })
+                .select('id', { count: 'exact', head: true }) // Count all admins
                 .eq('role', 'admin');
 
-             if (countError) console.error("Error counting admins:", countError.message);
+            if (countError) console.error("Error counting admins for delete check:", countError.message);
 
-             if (adminCount <= 1) { // If this is the only admin
-                 return res.status(400).json({ error: 'Cannot delete the last administrator account.' });
-             }
+            if (adminCount <= 1) { // If this is the only admin, prevent deletion
+                return res.status(400).json({ error: 'Cannot delete the last administrator account.' });
+            }
         }
-
 
         const { error } = await supabase
             .from('users')
             .delete()
-            .eq('id', id);
+            .eq('id', targetUserId);
 
         if (error) {
             console.error('Supabase error deleting user:', error.message);
+            // Handle specific errors, e.g., foreign key constraints (user has associated data)
             if (error.code === '23503') { // Foreign key violation
                 return res.status(400).json({ error: 'Cannot delete user: Associated data (e.g., orders, addresses) exists. Consider deactivating or anonymizing the user instead.' });
             }
             return res.status(500).json({ error: 'Database error deleting user.' });
         }
 
-        res.status(200).json({ message: 'User deleted successfully.' }); // Use 200 with message instead of 204 for better feedback
+        res.status(200).json({ message: 'User deleted successfully.' }); // Use 200 with message for better feedback
     } catch (error) {
         console.error('Error in deleteUser (admin):', error.message);
         res.status(500).json({ error: error.message || 'Internal server error deleting user.' });
     }
 };
 
+/**
+ * Update a user's role by ID.
+ * @route PUT /api/users/:id/role
+ * @access Private (Admin Only)
+ */
 export const updateUserRole = async (req, res) => {
     try {
-        const { id } = req.params; // User ID to update
-        const { role } = req.body; // New role
+        const { id: targetUserId } = req.params; // User ID to update
+        const { role: newRole } = req.body; // New role
         const currentUserId = req.user.id;
         const currentUserRole = req.user.role;
 
+        // Authorization: Only admin can update roles
         if (currentUserRole !== 'admin') {
             return res.status(403).json({ error: 'Access denied. Only administrators can update user roles.' });
         }
 
-        const validRoles = ['admin', 'user']; // Define your valid roles
-        if (!role || !validRoles.includes(role)) {
+        // Validation: Check if the provided role is valid
+        const validRoles = ['admin', 'customer', 'driver', 'staff']; // Define your valid roles
+        if (!newRole || !validRoles.includes(newRole)) {
             return res.status(400).json({ error: `Invalid role provided. Valid roles are: ${validRoles.join(', ')}.` });
         }
 
-        if (id === currentUserId && role !== 'admin') {
+        // Fetch target user's current role for safeguards
+        const { data: targetUser, error: targetUserError } = await supabase
+            .from('users')
+            .select('role')
+            .eq('id', targetUserId)
+            .single();
+
+        if (targetUserError || !targetUser) {
+            return res.status(404).json({ error: 'User to update not found.' });
+        }
+
+        // Safeguard: Prevent an admin from changing their own role (especially demoting)
+        if (targetUserId === currentUserId && newRole !== 'admin') {
             return res.status(400).json({ error: 'You cannot demote your own admin account.' });
         }
 
-        if (targetUser && targetUser.role === 'admin' && role !== 'admin') {
-             const { count: adminCount, error: countError } = await supabase
+        // Safeguard: Prevent demoting the last admin if there's only one
+        if (targetUser.role === 'admin' && newRole !== 'admin') {
+            const { count: adminCount, error: countError } = await supabase
                 .from('users')
                 .select('id', { count: 'exact', head: true })
                 .eq('role', 'admin');
 
-             if (countError) console.error("Error counting admins for role update:", countError.message);
+            if (countError) console.error("Error counting admins for role update:", countError.message);
 
-             if (adminCount <= 1) {
-                 return res.status(400).json({ error: 'Cannot demote the last administrator account.' });
-             }
+            if (adminCount <= 1) {
+                return res.status(400).json({ error: 'Cannot demote the last administrator account.' });
+            }
         }
-
 
         const { data: updatedUser, error } = await supabase
             .from('users')
-            .update({ role: role, updated_at: new Date().toISOString() })
-            .eq('id', id)
+            .update({ role: newRole, updated_at: new Date().toISOString() })
+            .eq('id', targetUserId)
             .select('id, full_name, email, phone_number, role, created_at, updated_at')
             .single();
 
@@ -237,16 +290,23 @@ export const updateUserRole = async (req, res) => {
 };
 
 
+// --- User Address Management Functions (for authenticated user to manage their OWN addresses) ---
+
+/**
+ * Get all addresses for the currently authenticated user.
+ * @route GET /api/users/me/addresses
+ * @access Private (Authenticated User)
+ */
 export const getUserAddresses = async (req, res) => {
     try {
-        const userId = req.user.id;
+        const userId = req.user.id; // Get user ID from authenticated request
 
         const { data: addresses, error } = await supabase
             .from('user_addresses')
             .select('*')
             .eq('user_id', userId)
-            .order('is_default', { ascending: false })
-            .order('created_at', { ascending: false });
+            .order('is_default', { ascending: false }) // Default addresses first
+            .order('created_at', { ascending: false }); // Then by newest
 
         if (error) {
             console.error('Supabase error fetching user addresses:', error.message);
@@ -260,15 +320,29 @@ export const getUserAddresses = async (req, res) => {
     }
 };
 
+/**
+ * Add a new address for the currently authenticated user.
+ * @route POST /api/users/me/addresses
+ * @access Private (Authenticated User)
+ */
 export const addUserAddress = async (req, res) => {
     try {
         const userId = req.user.id;
+
+        // IMPORTANT: Ensure userId is present from authMiddleware
+        if (!userId) {
+            console.error('addUserAddress: userId is missing from req.user. This indicates an authMiddleware or token issue.');
+            return res.status(401).json({ error: 'Authentication required. User ID not found in session.' });
+        }
+
         const { street_address, city, state, postal_code, country, is_default } = req.body;
 
+        // Backend validation for required fields
         if (!street_address || !city || !country) {
             return res.status(400).json({ error: 'Street address, city, and country are required.' });
         }
 
+        // If the new address is set as default, unset previous default for this user
         if (is_default) {
             await supabase
                 .from('user_addresses')
@@ -280,32 +354,58 @@ export const addUserAddress = async (req, res) => {
         const { data: newAddress, error } = await supabase
             .from('user_addresses')
             .insert([{
-                user_id: userId,
+                user_id: userId, // Link to the authenticated user
                 street_address,
                 city,
-                state,
-                postal_code,
+                // FIX: Ensure 'state' is an empty string if not provided, instead of null,
+                // as your DB schema defines 'state' as NOT NULL.
+                state: state || '', // Changed from `state || null` to `state || ''`
+                postal_code: postal_code || null, // Allow postal_code to be null
                 country,
-                is_default: is_default || false,
-                created_at: new Date().toISOString(), // Add created_at
-                updated_at: new Date().toISOString()  // Add updated_at
+                is_default: is_default || false, // Default to false if not explicitly true
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
             }])
-            .select('*')
-            .single();
+            .select('*') // Select the newly inserted row to return it
+            .single(); // Expect only one row to be inserted
 
         if (error) {
-            console.error('Supabase error adding user address:', error.message);
-            return res.status(500).json({ error: 'Database error adding user address.' });
+            // --- CRITICAL DEBUGGING LOGGING ---
+            console.error('Supabase error adding user address:');
+            console.error('  Message:', error.message);
+            console.error('  Code:', error.code); // PostgreSQL error code (e.g., '23502' for NOT NULL violation)
+            console.error('  Details:', error.details); // More specific error details
+            console.error('  Hint:', error.hint); // Hint for fixing the error
+            // --- END CRITICAL DEBUGGING LOGGING ---
+
+            // Provide more specific error responses based on common PostgreSQL error codes
+            if (error.code === '23502') { // Not Null Violation
+                return res.status(400).json({ error: `Missing required field or invalid data: ${error.details || error.message}` });
+            }
+            if (error.code === '23503') { // Foreign Key Violation (e.g., user_id does not exist in 'users' table)
+                return res.status(400).json({ error: `Invalid user ID or other foreign key constraint violation: ${error.details || error.message}` });
+            }
+            if (error.code === '22P02') { // Invalid Text Representation (e.g., trying to insert non-UUID into UUID column)
+                return res.status(400).json({ error: `Invalid data format: ${error.details || error.message}` });
+            }
+            // Generic database error for other unhandled cases
+            return res.status(500).json({ error: 'Database error adding user address: ' + error.message });
         }
 
-        res.status(201).json(newAddress);
+        res.status(201).json(newAddress); // Return the newly created address
 
     } catch (error) {
-        console.error('Error in addUserAddress:', error.message);
+        // Catch any unexpected errors in the controller logic itself (e.g., `req.user.id` is undefined)
+        console.error('Error in addUserAddress (controller catch block):', error.message);
         res.status(500).json({ error: error.message || 'Internal server error adding address.' });
     }
 };
 
+/**
+ * Update an existing address for the currently authenticated user.
+ * @route PUT /api/users/me/addresses/:id
+ * @access Private (Authenticated User)
+ */
 export const updateAddress = async (req, res) => {
     try {
         const userId = req.user.id;
@@ -325,28 +425,29 @@ export const updateAddress = async (req, res) => {
                 .from('user_addresses')
                 .update({ is_default: false, updated_at: new Date().toISOString() })
                 .eq('user_id', userId)
-                .eq('is_default', true);
-            updates.is_default = true;
+                .eq('is_default', true); // Only unset the one that is currently default
+            updates.is_default = true; // Set the current address to default
         } else if (is_default === false) {
-             updates.is_default = false;
+             updates.is_default = false; // Explicitly unset default
         }
 
-        if (Object.keys(updates).length === 1 && updates.updated_at) { // Only updated_at was set
+        // Check if any actual fields were provided for update
+        if (Object.keys(updates).length === 1 && updates.updated_at) {
             return res.status(400).json({ error: 'No address fields to update.' });
         }
-
 
         const { data: updatedAddress, error } = await supabase
             .from('user_addresses')
             .update(updates)
             .eq('id', addressId)
-            .eq('user_id', userId) // Crucial: ensure user owns the address
+            .eq('user_id', userId) // Crucial: ensure user owns the address they are trying to update
             .select('*')
             .single();
 
         if (error) {
             console.error('Supabase error updating user address:', error.message);
-            if (error.code === 'PGRST116') return res.status(404).json({ error: 'Address not found or does not belong to user.' });
+            if (error.code === 'PGRST116') return res.status(404).json({ error: 'Address not found or does not belong to your account.' });
+            // More specific error handling for DB constraints if needed
             return res.status(500).json({ error: 'Database error updating address.' });
         }
         if (!updatedAddress) {
@@ -360,12 +461,17 @@ export const updateAddress = async (req, res) => {
     }
 };
 
+/**
+ * Delete an address for the currently authenticated user.
+ * @route DELETE /api/users/me/addresses/:id
+ * @access Private (Authenticated User)
+ */
 export const deleteAddress = async (req, res) => {
     try {
         const userId = req.user.id;
         const { id: addressId } = req.params; // Address ID from URL
 
-        // Optional: Prevent deleting the last address or the default address if it's the only one
+        // Fetch all addresses for the user to apply safeguards
         const { data: currentAddresses, error: fetchError } = await supabase
             .from('user_addresses')
             .select('id, is_default')
@@ -378,22 +484,23 @@ export const deleteAddress = async (req, res) => {
 
         const targetAddress = currentAddresses.find(addr => addr.id === addressId);
         if (!targetAddress) {
-             return res.status(404).json({ error: 'Address not found or does not belong to user.' });
+             return res.status(404).json({ error: 'Address not found or does not belong to your account.' });
         }
 
+        // Safeguard: Prevent deleting the last remaining address
         if (currentAddresses.length === 1) {
-             return res.status(400).json({ error: 'Cannot delete the last remaining address.' });
+             return res.status(400).json({ error: 'Cannot delete the last remaining address. You must have at least one address.' });
         }
+        // Safeguard: Prevent deleting the default address if there are other addresses
         if (targetAddress.is_default && currentAddresses.length > 1) {
              return res.status(400).json({ error: 'Cannot delete the default address. Please set another address as default first.' });
         }
-
 
         const { error } = await supabase
             .from('user_addresses')
             .delete()
             .eq('id', addressId)
-            .eq('user_id', userId); // Crucial: ensure user owns the address
+            .eq('user_id', userId); // Crucial: ensure user owns the address they are trying to delete
 
         if (error) {
             console.error('Supabase error deleting user address:', error.message);

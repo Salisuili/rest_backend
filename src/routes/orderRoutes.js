@@ -1,25 +1,35 @@
-// backend/routes/orderRoutes.js
+// backend/src/routes/orderRoutes.js
 import express from 'express';
+import { authMiddleware } from '../middlewares/authMiddleware.js'; // Changed 'protect' to 'authMiddleware'
 import {
-  createOrder,
-  initiatePayment,
-  getOrders, // This function should be capable of getting all orders for admin, or specific orders for users
-  getOrderById, // Assuming you have this
-  updateOrderStatus // Assuming you have this for admin actions
+    createOrder,
+    getOrderById,
+    getMyOrders,      // For authenticated user's orders
+    getAllOrders,     // For admin to get all orders
+    updateOrderStatus,
+    initiatePayment,
+    verifyPayment
 } from '../controllers/orderController.js';
-import { authMiddleware, adminMiddleware } from '../middlewares/authMiddleware.js'; // Import both middlewares
 
 const router = express.Router();
 
-// User-facing routes (authenticated, but not necessarily admin)
-router.post('/', authMiddleware, createOrder);
-router.post('/:orderId/pay', authMiddleware, initiatePayment);
-router.get('/:id', authMiddleware, getOrderById); // User can view their own specific order
+// --- Public/Authenticated User Routes for Orders ---
+router.post('/', authMiddleware, createOrder); // Create a new order
+router.get('/my-orders', authMiddleware, getMyOrders); // Get orders for the authenticated user
+router.get('/:id', authMiddleware, getOrderById); // Get a single order by ID (accessible by owner or admin)
 
-// Admin-only route to get all orders (for the admin dashboard)
-router.get('/', authMiddleware, adminMiddleware, getOrders); // Protected
+// --- Payment Related Routes ---
+router.post('/:id/initiate-payment', authMiddleware, initiatePayment); // Initiate payment for an order
+// Note: verify-payment is typically called by a webhook or a redirect after payment,
+// so its middleware might differ based on your payment gateway's setup.
+router.get('/:id/verify-payment', authMiddleware, verifyPayment); // Verify payment status (e.g., after redirect)
+// If you have a dedicated webhook endpoint that doesn't use `authMiddleware` or `adminMiddleware`
+// router.post('/webhook/paystack', handlePaymentWebhook); // Example webhook route (if handlePaymentWebhook is exported)
 
-// Admin-only route to update order status
-router.patch('/:id/status', authMiddleware, adminMiddleware, updateOrderStatus); // Protected
+
+// --- Admin Routes for Orders ---
+// These routes require authentication. Authorization is handled within the controller functions.
+router.get('/', authMiddleware, getAllOrders); // Admin gets all orders (authorization checked in controller)
+router.put('/:id/status', authMiddleware, updateOrderStatus); // Admin updates order status (authorization checked in controller)
 
 export default router;
