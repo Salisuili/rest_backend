@@ -3,6 +3,12 @@ import supabase from '../config/supabase.js';
 
 export const getDashboardStats = async (req, res) => {
   try {
+    // Assuming user role check is done by a middleware before this controller,
+    // or you can add it here if not:
+    // if (req.user.role !== 'admin') {
+    //     return res.status(403).json({ error: 'Access denied. Only administrators can view dashboard data.' });
+    // }
+
     // 1. Fetch Total Orders
     const { count: totalOrders, error: ordersCountError } = await supabase
       .from('orders')
@@ -10,13 +16,14 @@ export const getDashboardStats = async (req, res) => {
 
     if (ordersCountError) throw ordersCountError;
 
-    // 2. Fetch Total Revenue (assuming 'orders' table has a 'total_amount' column)
+    // 2. Fetch Total Revenue (only from PAID orders)
     const { data: revenueData, error: revenueError } = await supabase
       .from('orders')
-      .select('total_amount'); // Select all total_amount to sum them up
+      .select('total_amount')
+      .eq('payment_status', 'paid'); // CRITICAL: Filter by 'paid' payment status
 
     if (revenueError) throw revenueError;
-    const totalRevenue = revenueData.reduce((sum, order) => sum + order.total_amount, 0);
+    const totalRevenue = revenueData.reduce((sum, order) => sum + parseFloat(order.total_amount), 0); // Use parseFloat for safety
 
     // 3. Fetch Pending Orders
     const { count: pendingOrders, error: pendingOrdersError } = await supabase
@@ -34,7 +41,6 @@ export const getDashboardStats = async (req, res) => {
     if (menuItemsCountError) throw menuItemsCountError;
 
     // 5. Fetch Recent Orders (e.g., last 5)
-    // Assuming 'orders' table also has a 'customer_id' and 'created_at' and 'order_items' is related
     const { data: recentOrders, error: recentOrdersError } = await supabase
       .from('orders')
       .select(`

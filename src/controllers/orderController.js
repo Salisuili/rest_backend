@@ -11,7 +11,7 @@ import axios from 'axios'; // Import axios for external API calls like Paystack
 export const createOrder = async (req, res) => {
     try {
         const userId = req.user.id; // User ID from authenticated session
-        const { items, address_id, delivery_notes } = req.body;
+        const { items, address_id, delivery_notes, is_pickup } = req.body; // Added is_pickup
 
         if (!userId) {
             return res.status(401).json({ error: 'Authentication required. User ID not found.' });
@@ -19,11 +19,15 @@ export const createOrder = async (req, res) => {
         if (!items || items.length === 0) {
             return res.status(400).json({ error: 'Order must contain at least one item.' });
         }
-        if (!address_id) {
-            return res.status(400).json({ error: 'Delivery address is required for the order.' });
+        // Address ID is required only if it's a delivery order
+        // This condition evaluates to true if:
+        // (is_pickup is false OR is_pickup is undefined/null) AND (address_id is null OR address_id is undefined)
+        if (!is_pickup && !address_id) {
+            console.error('createOrder: Triggered "Delivery address is required" error. is_pickup was', is_pickup, 'and address_id was', address_id);
+            return res.status(400).json({ error: 'Delivery address is required for delivery orders.' });
         }
 
-        // Calculate subtotal and total amount from items
+        // Calculate subtotal from items
         let subtotal = 0;
         // Fetch actual prices from menu_items to prevent client-side price manipulation
         const itemIds = items.map(item => item.id);
@@ -55,7 +59,34 @@ export const createOrder = async (req, res) => {
             });
         }
 
-        const delivery_fee = 0; // Assuming fixed or calculated delivery fee, for now 0
+        // Calculate delivery fee conditionally
+        let delivery_fee = 0;
+        let selectedAddress = null;
+
+        if (!is_pickup) { // If it's a delivery order
+            // Fetch address details to calculate delivery fee based on city
+            const { data: address, error: addressError } = await supabase
+                .from('user_addresses')
+                .select('id, city')
+                .eq('id', address_id)
+                .eq('user_id', userId) // Security: Ensure address belongs to the current user
+                .single();
+
+            if (addressError || !address) {
+                console.error("Supabase error fetching delivery address for fee calculation:", addressError?.message);
+                return res.status(404).json({ error: 'Delivery address not found or does not belong to your account.' });
+            }
+            selectedAddress = address;
+
+            // Apply your delivery fee logic here (consistent with frontend calculation)
+            if (selectedAddress.city.toLowerCase() === 'lagos') {
+                delivery_fee = subtotal >= 5000 ? 0 : 1000;
+            } else {
+                delivery_fee = 2000; // Example for non-Lagos cities
+            }
+        }
+        // If is_pickup is true, delivery_fee remains 0 as initialized
+
         const total_amount = subtotal + delivery_fee;
         const order_number = `ORD-${uuidv4().substring(0, 8).toUpperCase()}`; // Generate a unique order number
 
@@ -64,13 +95,15 @@ export const createOrder = async (req, res) => {
             .from('orders')
             .insert([{
                 user_id: userId,
-                address_id: address_id,
+                address_id: is_pickup ? null : address_id, // Store address_id only if it's a delivery
                 order_number: order_number,
                 status: 'pending', // Initial status
                 subtotal: subtotal,
                 delivery_fee: delivery_fee,
                 total_amount: total_amount,
+                payment_status: 'pending', // Initialize payment status
                 delivery_notes: delivery_notes || null,
+                is_pickup: is_pickup, // Store the pickup status
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             }])
