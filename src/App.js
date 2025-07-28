@@ -13,7 +13,7 @@ import userRoutes from './routes/userRoutes.js';
 import categoryRoutes from './routes/categoryRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import menuItemRoutes from './routes/menuItemRoutes.js'; // Specific for CRUD on menu items
-import uploadRoutes from './routes/uploadRoutes.js'; // Import the new upload routes
+// import uploadRoutes from './routes/uploadRoutes.js'; // No longer explicitly needed if multer is integrated into other routes
 
 // Import your custom error middleware
 import errorMiddleware from './middlewares/errorMiddleware.js';
@@ -26,13 +26,13 @@ const __dirname = path.dirname(__filename);
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL // Preserve your specific CORS origin
+    origin: process.env.FRONTEND_URL // Preserve your specific CORS origin
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Preserve your urlencoded middleware
 
 // Serve static files from the 'uploads' directory
-// This makes files saved in backend/uploads accessible via a URL path like /uploads/menu_items/image.jpg
+// This makes files saved in backend/uploads accessible via a URL path like /uploads/filename.ext
 // IMPORTANT: Files saved here will be LOST on Render redeploys/restarts due to ephemeral file system.
 // This setup is primarily for local development or if you're using persistent storage.
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
@@ -45,14 +45,14 @@ app.use('/api/users', userRoutes);
 app.use('/api/categories', categoryRoutes);
 app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/menu-items', menuItemRoutes); // Specific menu item CRUD routes
-app.use('/api/upload', uploadRoutes); // Use the new upload routes for images
+// app.use('/api/upload', uploadRoutes); // Removed, as multer is now directly in menuItemRoutes
 
 // Error handling middleware (your existing one)
 app.use(errorMiddleware);
 
 // Basic route for testing (optional, can be removed if not needed)
 app.get('/', (req, res) => {
-  res.send('Restaurant Management System API is running!');
+    res.send('Restaurant Management System API is running!');
 });
 
 // REMOVED: The server listening part from app.js.
