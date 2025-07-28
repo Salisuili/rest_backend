@@ -13,7 +13,7 @@ import userRoutes from './routes/userRoutes.js';
 import categoryRoutes from './routes/categoryRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
 import menuItemRoutes from './routes/menuItemRoutes.js'; // Specific for CRUD on menu items
-// import uploadRoutes from './routes/uploadRoutes.js'; // No longer explicitly needed if multer is integrated into other routes
+// import uploadRoutes from './routes/uploadRoutes.js'; // Removed, as multer is now directly in menuItemRoutes
 
 // Import your custom error middleware
 import errorMiddleware from './middlewares/errorMiddleware.js';

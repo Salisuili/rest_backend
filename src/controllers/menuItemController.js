@@ -66,6 +66,46 @@ export const getMenuItems = async (req, res) => {
     }
 };
 
+// --- Get Menu Item By ID ---
+export const getMenuItemById = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const { data: menuItem, error } = await supabase
+            .from('menu_items')
+            .select(`
+                *,
+                categories ( name )
+            `)
+            .eq('id', id)
+            .single();
+
+        if (error) {
+            console.error('Supabase error fetching menu item by ID:', error.message);
+            if (error.code === 'PGRST116') {
+                return res.status(404).json({ error: 'Menu item not found.' });
+            }
+            return res.status(500).json({ error: 'Database error fetching menu item.' });
+        }
+
+        if (!menuItem) {
+            return res.status(404).json({ error: 'Menu item not found.' });
+        }
+
+        const formattedItem = {
+            ...menuItem,
+            category_name: menuItem.categories ? menuItem.categories.name : 'Uncategorized',
+            categories: undefined
+        };
+
+        res.status(200).json(formattedItem);
+
+    } catch (error) {
+        console.error('Server error in getMenuItemById:', error.message);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+};
+
 // --- Create Menu Item (Admin Only) ---
 export const createMenuItem = async (req, res) => {
     try {
