@@ -20,8 +20,6 @@ export const createOrder = async (req, res) => {
             return res.status(400).json({ error: 'Order must contain at least one item.' });
         }
         // Address ID is required only if it's a delivery order
-        // This condition evaluates to true if:
-        // (is_pickup is false OR is_pickup is undefined/null) AND (address_id is null OR address_id is undefined)
         if (!is_pickup && !address_id) {
             console.error('createOrder: Triggered "Delivery address is required" error. is_pickup was', is_pickup, 'and address_id was', address_id);
             return res.status(400).json({ error: 'Delivery address is required for delivery orders.' });
@@ -59,9 +57,8 @@ export const createOrder = async (req, res) => {
             });
         }
 
-        // Calculate delivery fee conditionally
-        let delivery_fee = 0;
-        let selectedAddress = null;
+        // Calculate delivery fee conditionally - SYNCHRONIZED WITH FRONTEND
+        let delivery_fee = 0; // Default to 0 for pickup or if no delivery is selected
 
         if (!is_pickup) { // If it's a delivery order
             // Fetch address details to calculate delivery fee based on city
@@ -76,13 +73,12 @@ export const createOrder = async (req, res) => {
                 console.error("Supabase error fetching delivery address for fee calculation:", addressError?.message);
                 return res.status(404).json({ error: 'Delivery address not found or does not belong to your account.' });
             }
-            selectedAddress = address;
 
-            // Apply your delivery fee logic here (consistent with frontend calculation)
-            if (selectedAddress.city.toLowerCase() === 'lagos') {
-                delivery_fee = subtotal >= 5000 ? 0 : 1000;
-            } else {
-                delivery_fee = 2000; // Example for non-Lagos cities
+            // Apply the delivery fee logic to match the frontend (Zaria vs. Others)
+            if (address.city.toLowerCase() === 'zaria') { // Matching frontend: Zaria logic
+                delivery_fee = subtotal >= 5000 ? 0 : 500;
+            } else { // Matching frontend: All other cities logic
+                delivery_fee = 1000;
             }
         }
         // If is_pickup is true, delivery_fee remains 0 as initialized
@@ -99,7 +95,7 @@ export const createOrder = async (req, res) => {
                 order_number: order_number,
                 status: 'pending', // Initial status
                 subtotal: subtotal,
-                delivery_fee: delivery_fee,
+                delivery_fee: delivery_fee, // Store the calculated delivery fee
                 total_amount: total_amount,
                 payment_status: 'pending', // Initialize payment status
                 delivery_notes: delivery_notes || null,
@@ -112,9 +108,9 @@ export const createOrder = async (req, res) => {
 
         if (orderError) {
             console.error('Supabase error creating order:', orderError.message);
-            console.error('  Code:', orderError.code);
-            console.error('  Details:', orderError.details);
-            console.error('  Hint:', orderError.hint);
+            console.error('   Code:', orderError.code);
+            console.error('   Details:', orderError.details);
+            console.error('   Hint:', orderError.hint);
             return res.status(500).json({ error: 'Database error creating order.' });
         }
 
@@ -131,9 +127,9 @@ export const createOrder = async (req, res) => {
 
         if (orderItemsError) {
             console.error('Supabase error inserting order items:', orderItemsError.message);
-            console.error('  Code:', orderItemsError.code);
-            console.error('  Details:', orderItemsError.details);
-            console.error('  Hint:', orderItemsError.hint);
+            console.error('   Code:', orderItemsError.code);
+            console.error('   Details:', orderItemsError.details);
+            console.error('   Hint:', orderItemsError.hint);
             // Optional: Rollback the main order if order items insertion fails
             await supabase.from('orders').delete().eq('id', newOrder.id);
             return res.status(500).json({ error: 'Database error creating order items. Order rolled back.' });
