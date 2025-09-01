@@ -15,8 +15,8 @@ export const authMiddleware = async (req, res, next) => {
     // Verify user exists and retrieve their role
     const { data: user, error } = await supabase
       .from('users')
-      .select('id, email, full_name, role') // <--- IMPORTANT: Select the 'role' column
-      .eq('id', decoded.id) // Assuming 'decoded.id' is the user's ID from the JWT payload
+      .select('id, email, full_name, role') 
+      .eq('id', decoded.id) 
       .single();
 
     if (error || !user) {
@@ -49,7 +49,7 @@ export const authMiddleware = async (req, res, next) => {
 
 // Update adminMiddleware to check the 'role' column directly
 export const adminMiddleware = (req, res, next) => {
-  if (!req.user || req.user.role !== 'admin') { // <--- IMPORTANT: Check req.user.role directly
+  if (!req.user || req.user.role !== 'admin') { 
     return res.status(403).json({ error: 'Admin access required' });
   }
   next();

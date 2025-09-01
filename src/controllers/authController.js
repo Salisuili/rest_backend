@@ -24,7 +24,7 @@ export const register = async (req, res) => {
                     // with a specific role, which is typically not done for public registration.
                 }
             ])
-            .select('id, email, full_name, role') // <--- IMPORTANT: Select the 'role' column here too!
+            .select('id, email, full_name, role') 
             .single();
 
         if (error) {
@@ -47,7 +47,7 @@ export const register = async (req, res) => {
 
         // Generate token including the user's role
         const token = jwt.sign(
-            { id: user.id, email: user.email, role: user.role }, // <--- ADD ROLE TO JWT PAYLOAD
+            { id: user.id, email: user.email, role: user.role }, 
             process.env.JWT_SECRET,
             { expiresIn: '7d' }
         );
@@ -58,7 +58,7 @@ export const register = async (req, res) => {
                 id: user.id,
                 email: user.email,
                 full_name: user.full_name,
-                role: user.role // <--- ADD ROLE TO RESPONSE
+                role: user.role // 
             }
         });
 
@@ -75,25 +75,24 @@ export const login = async (req, res) => {
 
         const { data: user, error } = await supabase
             .from('users')
-            // Select the role and password_hash
-            .select('id, email, full_name, role, password_hash') // <--- IMPORTANT: Select 'role' and 'password_hash'
+            .select('id, email, full_name, role, password_hash') 
             .eq('email', email)
             .single();
 
         // --- Check for user existence or database query error ---
         if (error) {
-            console.error('Login Supabase error:', error.message); // Log the actual error for debugging
+            console.error('Login Supabase error:', error.message); 
             throw new Error('Database query failed during login. Please try again later.');
         }
         if (!user) {
-            throw new Error('Invalid credentials'); // User not found, treat as invalid credentials
+            throw new Error('Invalid credentials'); 
         }
 
         // Compare provided password with hashed password from DB
         const isMatch = await bcrypt.compare(password, user.password_hash);
 
         if (!isMatch) {
-            throw new Error('Invalid credentials'); // Passwords do not match
+            throw new Error('Invalid credentials'); 
         }
 
         if (!process.env.JWT_SECRET) {
@@ -102,7 +101,7 @@ export const login = async (req, res) => {
 
         // Generate token including the user's role
         const token = jwt.sign(
-            { id: user.id, email: user.email, role: user.role }, // <--- ADD ROLE TO JWT PAYLOAD
+            { id: user.id, email: user.email, role: user.role }, 
             process.env.JWT_SECRET,
             { expiresIn: '7d' }
         );
@@ -113,14 +112,13 @@ export const login = async (req, res) => {
                 id: user.id,
                 email: user.email,
                 full_name: user.full_name,
-                role: user.role // <--- ADD ROLE TO RESPONSE
+                role: user.role
             }
         });
 
     } catch (error) {
-        console.error('Login general error:', error.message); // Log the actual error for debugging
+        console.error('Login general error:', error.message); 
         if (!res.headersSent) {
-            // For security, always return generic 'Invalid credentials' for login failures
             res.status(401).json({ error: 'Invalid credentials' });
         }
     }
